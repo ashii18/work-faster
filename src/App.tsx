@@ -1,5 +1,4 @@
-import React, { useState, useEffect } from "react";
-import logo from "./logo.svg";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import "./App.css";
 
 import playImg from "./assets/play.png";
@@ -23,23 +22,35 @@ function App() {
   const [isBreak, setIsBreak] = useState(false);
   const [encouragement, setEncouragement] = useState("");
   const [image, setImage] = useState(playImg);
-  const meowAudio = new Audio(meowSound);
 
-  const cheerMessages = [
-    "You Can Do It!",
-    "I believe in you!",
-    "You're amazing!",
-    "Keep going!",
-    "Stay focused!",
-  ];
+  // Audio reference
+  const meowAudioRef = useRef<HTMLAudioElement | null>(null);
+  useEffect(() => {
+    meowAudioRef.current = new Audio(meowSound);
+  }, []);
 
-  const breakMessages = [
-    "Stay hydrated!",
-    "Snacks, maybe?",
-    "Text me!",
-    "I love you <3",
-    "Stretch your legs!",
-  ];
+  // Messages arrays wrapped in useMemo
+  const cheerMessages = useMemo(
+    () => [
+      "You Can Do It!",
+      "I believe in you!",
+      "You're amazing!",
+      "Keep going!",
+      "Stay focused!",
+    ],
+    [],
+  );
+
+  const breakMessages = useMemo(
+    () => [
+      "Stay hydrated!",
+      "Snacks, maybe?",
+      "Text me!",
+      "I love you <3",
+      "Stretch your legs!",
+    ],
+    [],
+  );
 
   // Encouragement message updater
   useEffect(() => {
@@ -47,54 +58,56 @@ function App() {
 
     if (isRunning) {
       const messages = isBreak ? breakMessages : cheerMessages;
-      setEncouragement(messages[0]); // set first message initially
+      setEncouragement(messages[0]);
       let index = 1;
 
       messageInterval = setInterval(() => {
         setEncouragement(messages[index]);
         index = (index + 1) % messages.length;
-      }, 4000); // every 4 seconds
+      }, 4000);
     } else {
       setEncouragement("");
     }
 
     return () => clearInterval(messageInterval);
-  }, [isRunning, isBreak]);
+  }, [isRunning, isBreak, breakMessages, cheerMessages]);
 
   // Countdown timer
   useEffect(() => {
     let timer: NodeJS.Timeout;
+
     if (isRunning && timeLeft > 0) {
       timer = setInterval(() => {
         setTimeLeft((prev) => prev - 1);
       }, 1000);
     }
+
     return () => clearInterval(timer);
   }, [isRunning, timeLeft]);
 
-  // set initial switch mode to false
+  // Initial mode
   useEffect(() => {
     switchMode(false);
   }, []);
 
-  // meow sound
+  // Meow sound effect
   useEffect(() => {
-    if (timeLeft === 0 && isRunning) {
-      meowAudio.play().catch((err) => {
+    if (timeLeft === 0 && isRunning && meowAudioRef.current) {
+      meowAudioRef.current.play().catch((err) => {
         console.error("Audio play failed:", err);
       });
-      setIsRunning(false); // Optional: auto-stop the timer
-      setImage(playImg); // Reset to play button
-      setGifImage(idleGif); // Reset to idle gif
+
+      setIsRunning(false);
+      setImage(playImg);
+      setGifImage(idleGif);
       setTimeLeft(isBreak ? 5 * 60 : 25 * 60);
     }
-  }, [timeLeft]);
+  }, [timeLeft, isRunning, isBreak]);
 
   const formatTime = (seconds: number): string => {
     const m = Math.floor(seconds / 60)
       .toString()
       .padStart(2, "0");
-
     const s = (seconds % 60).toString().padStart(2, "0");
     return `${m}:${s}`;
   };
@@ -129,9 +142,8 @@ function App() {
     }
   };
 
-  const containerClass = `home-container ${
-    isRunning ? "background-green" : ""
-  }`;
+  const containerClass = `home-container ${isRunning ? "background-green" : ""}`;
+
   return (
     <div className={containerClass} style={{ position: "relative" }}>
       <div>
