@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import "./App.css";
 
 import playImg from "./assets/play.png";
@@ -16,112 +16,102 @@ import closeBtn from "./assets/close.png";
 function App() {
   const [timeLeft, setTimeLeft] = useState(25 * 60);
   const [isRunning, setIsRunning] = useState(false);
+  const [isBreak, setIsBreak] = useState(false);
+  const [gifImage, setGifImage] = useState(idleGif);
+  const [image, setImage] = useState(playImg);
+  const [encouragement, setEncouragement] = useState("");
+
   const [breakButtonImage, setBreakButtonImage] = useState(breakBtn);
   const [workButtonImage, setWorkButtonImage] = useState(workBtn);
-  const [gifImage, setGifImage] = useState(idleGif);
-  const [isBreak, setIsBreak] = useState(false);
-  const [encouragement, setEncouragement] = useState("");
-  const [image, setImage] = useState(playImg);
 
-  // Audio reference
-  const meowAudioRef = useRef<HTMLAudioElement | null>(null);
+  /** ✅ iOS-safe audio */
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const audioUnlocked = useRef(false);
+
+  const cheerMessages = [
+    "You Can Do It!",
+    "I believe in you!",
+    "You're amazing!",
+    "Keep going!",
+    "Stay focused!",
+  ];
+
+  const breakMessages = [
+    "Stay hydrated!",
+    "Snacks, maybe?",
+    "Text me!",
+    "I love you <3",
+    "Stretch your legs!",
+  ];
+
+  /** Initialize audio once */
   useEffect(() => {
-    meowAudioRef.current = new Audio(meowSound);
+    audioRef.current = new Audio(meowSound);
+    audioRef.current.preload = "auto";
   }, []);
 
-  // Messages arrays wrapped in useMemo
-  const cheerMessages = useMemo(
-    () => [
-      "You Can Do It!",
-      "I believe in you!",
-      "You're amazing!",
-      "Keep going!",
-      "Stay focused!",
-    ],
-    [],
-  );
-
-  const breakMessages = useMemo(
-    () => [
-      "Stay hydrated!",
-      "Snacks, maybe?",
-      "Text me!",
-      "I love you <3",
-      "Stretch your legs!",
-    ],
-    [],
-  );
-
-  // Encouragement message updater
+  /** Encouragement messages */
   useEffect(() => {
-    let messageInterval: NodeJS.Timeout;
-
-    if (isRunning) {
-      const messages = isBreak ? breakMessages : cheerMessages;
-      setEncouragement(messages[0]);
-      let index = 1;
-
-      messageInterval = setInterval(() => {
-        setEncouragement(messages[index]);
-        index = (index + 1) % messages.length;
-      }, 4000);
-    } else {
+    if (!isRunning) {
       setEncouragement("");
+      return;
     }
 
-    return () => clearInterval(messageInterval);
-  }, [isRunning, isBreak, breakMessages, cheerMessages]);
+    const messages = isBreak ? breakMessages : cheerMessages;
+    let index = 0;
+    setEncouragement(messages[index]);
 
-  // Countdown timer
+    const interval = setInterval(() => {
+      index = (index + 1) % messages.length;
+      setEncouragement(messages[index]);
+    }, 4000);
+
+    return () => clearInterval(interval);
+  }, [isRunning, isBreak]);
+
+  /** Countdown */
   useEffect(() => {
-    let timer: NodeJS.Timeout;
+    if (!isRunning || timeLeft <= 0) return;
 
-    if (isRunning && timeLeft > 0) {
-      timer = setInterval(() => {
-        setTimeLeft((prev) => prev - 1);
-      }, 1000);
-    }
+    const timer = setInterval(() => {
+      setTimeLeft((prev) => prev - 1);
+    }, 1000);
 
     return () => clearInterval(timer);
   }, [isRunning, timeLeft]);
 
-  // Initial mode
+  /** Timer finished */
   useEffect(() => {
-    switchMode(false);
-  }, []);
-
-  // Meow sound effect
-  useEffect(() => {
-    if (timeLeft === 0 && isRunning && meowAudioRef.current) {
-      meowAudioRef.current.play().catch((err) => {
-        console.error("Audio play failed:", err);
-      });
-
+    if (timeLeft === 0 && isRunning) {
       setIsRunning(false);
-      setImage(playImg);
       setGifImage(idleGif);
+      setImage(playImg);
       setTimeLeft(isBreak ? 5 * 60 : 25 * 60);
+
+      // ✅ SAFE PLAY (works on iOS now)
+      audioRef.current?.play().catch(() => {});
     }
   }, [timeLeft, isRunning, isBreak]);
 
-  const formatTime = (seconds: number): string => {
-    const m = Math.floor(seconds / 60)
-      .toString()
-      .padStart(2, "0");
-    const s = (seconds % 60).toString().padStart(2, "0");
-    return `${m}:${s}`;
+  /** Unlock audio on first user tap */
+  const unlockAudio = async () => {
+    if (!audioRef.current || audioUnlocked.current) return;
+
+    try {
+      audioRef.current.muted = true;
+      await audioRef.current.play();
+      audioRef.current.pause();
+      audioRef.current.currentTime = 0;
+      audioRef.current.muted = false;
+      audioUnlocked.current = true;
+    } catch {
+      // ignored
+    }
   };
 
-  const switchMode = (breakMode: boolean) => {
-    setIsBreak(breakMode);
-    setIsRunning(false);
-    setBreakButtonImage(breakMode ? breakBtnClicked : breakBtn);
-    setWorkButtonImage(breakMode ? workBtn : workBtnClicked);
-    setTimeLeft(breakMode ? 5 * 60 : 25 * 60);
-    setGifImage(idleGif);
-  };
+  const handleClick = async () => {
+    await unlockAudio();
 
-  const handleClick = () => {
     if (!isRunning) {
       setIsRunning(true);
       setGifImage(isBreak ? breakGif : workGif);
@@ -134,23 +124,32 @@ function App() {
     }
   };
 
-  const handleCloseClick = () => {
-    if (window.electronAPI?.closeApp) {
-      window.electronAPI.closeApp();
-    } else {
-      console.warn("Electron API not available");
-    }
+  const switchMode = (breakMode: boolean) => {
+    setIsBreak(breakMode);
+    setIsRunning(false);
+    setTimeLeft(breakMode ? 5 * 60 : 25 * 60);
+    setGifImage(idleGif);
+    setBreakButtonImage(breakMode ? breakBtnClicked : breakBtn);
+    setWorkButtonImage(breakMode ? workBtn : workBtnClicked);
   };
 
-  const containerClass = `home-container ${isRunning ? "background-green" : ""}`;
+  const formatTime = (seconds: number) => {
+    const m = Math.floor(seconds / 60)
+      .toString()
+      .padStart(2, "0");
+    const s = (seconds % 60).toString().padStart(2, "0");
+    return `${m}:${s}`;
+  };
+
+  const handleCloseClick = () => {
+    window.electronAPI?.closeApp?.();
+  };
 
   return (
-    <div className={containerClass} style={{ position: "relative" }}>
-      <div>
-        <button className="close-button" onClick={handleCloseClick}>
-          <img src={closeBtn} alt="Close" />
-        </button>
-      </div>
+    <div className={`home-container ${isRunning ? "background-green" : ""}`}>
+      <button className="close-button" onClick={handleCloseClick}>
+        <img src={closeBtn} alt="Close" />
+      </button>
 
       <div className="home-content">
         <div className="home-controls">
@@ -167,9 +166,10 @@ function App() {
         </p>
 
         <h1 className="home-timer">{formatTime(timeLeft)}</h1>
-        <img src={gifImage} alt="Timer Status" className="gif-image" />
+        <img src={gifImage} alt="Status" className="gif-image" />
+
         <button className="home-button" onClick={handleClick}>
-          <img src={image} alt="Button Icon" />
+          <img src={image} alt="Control" />
         </button>
       </div>
     </div>
